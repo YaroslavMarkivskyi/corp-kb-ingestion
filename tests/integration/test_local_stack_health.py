@@ -50,7 +50,7 @@ def local_stack(example_environment: dict[str, str]) -> Iterator[None]:
     """Start the Compose stack once and always stop it when the module is done."""
     compose_environment = {**os.environ, **example_environment}
     subprocess.run(
-        ("docker", "compose", "up", "-d", "--wait"),
+        ("docker", "compose", "up", "-d", "--wait", "--pull", "never"),
         check=True,
         cwd=PROJECT_ROOT,
         env=compose_environment,
@@ -105,11 +105,15 @@ def test_azurite_creates_and_deletes_example_container(
     )
     container = blob_service.get_container_client(example_environment["KB_BLOB_CONTAINER"])
 
-    container.create_container()
     try:
+        if container.exists():
+            container.delete_container()
+
+        container.create_container()
         assert container.exists()
     finally:
-        container.delete_container()
+        if container.exists():
+            container.delete_container()
 
 
 def test_all_local_services_report_healthy(
