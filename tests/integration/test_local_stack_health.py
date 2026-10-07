@@ -3,7 +3,9 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import pytest
@@ -11,7 +13,6 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).parents[2]
 EXAMPLE_ENVIRONMENT_FILE = PROJECT_ROOT / ".env.example"
-POSTGRES_PORT = 5432
 
 
 def _read_example_environment() -> dict[str, str]:
@@ -26,7 +27,56 @@ def _read_example_environment() -> dict[str, str]:
             continue
         name, value = line.split("=", maxsplit=1)
         settings[name] = value
-    return settings
+    return {
+        name: re.sub(
+            r"\$\{([A-Z_]+)\}",
+            lambda match: settings[match.group(1)],
+            value,
+        )
+        for name, value in settings.items()
+    }
+
+
+def _published_port(compose_config: dict[str, object], service_name: str) -> str:
+    """Return the published host port for the service's sole TCP port."""
+    services = compose_config["services"]
+    assert isinstance(services, dict)
+    service = services[service_name]
+    assert isinstance(service, dict)
+    ports = service["ports"]
+    assert isinstance(ports, list) and len(ports) == 1
+    port = ports[0]
+    assert isinstance(port, dict)
+    return str(port["published"])
+
+
+def test_compose_configures_changed_noncolliding_host_ports() -> None:
+    """Compose publishes each service on its distinct runtime-configured port."""
+    postgres_port = "55432"
+    azurite_port = "11000"
+
+    environment = {
+        **os.environ,
+        **_read_example_environment(),
+        "KB_PG_PORT": postgres_port,
+        "KB_BLOB_PORT": azurite_port,
+        "KB_BLOB_ACCOUNT_URL": (
+            f"http://127.0.0.1:{azurite_port}/devstoreaccount1"
+        ),
+    }
+    rendered_config = subprocess.run(
+        ("docker", "compose", "config", "--format", "json"),
+        capture_output=True,
+        check=True,
+        cwd=PROJECT_ROOT,
+        env=environment,
+        text=True,
+    )
+    compose_config = json.loads(rendered_config.stdout)
+
+    assert _published_port(compose_config, "postgres") == postgres_port
+    assert _published_port(compose_config, "azurite") == azurite_port
+    assert postgres_port != azurite_port
 
 
 @pytest.fixture(scope="module")
@@ -35,9 +85,11 @@ def example_environment() -> dict[str, str]:
     settings = _read_example_environment()
     expected_settings = {
         "KB_PG_HOST",
+        "KB_PG_PORT",
         "KB_PG_DB",
         "KB_PG_USER",
         "KB_PG_PASSWORD",
+        "KB_BLOB_PORT",
         "KB_BLOB_ACCOUNT_URL",
         "KB_BLOB_CONTAINER",
     }
@@ -53,7 +105,7 @@ def test_postgresql_answers_with_example_settings_and_pgvector(
 
     with psycopg.connect(
         host=example_environment["KB_PG_HOST"],
-        port=POSTGRES_PORT,
+        port=int(example_environment["KB_PG_PORT"]),
         dbname=example_environment["KB_PG_DB"],
         user=example_environment["KB_PG_USER"],
         password=example_environment["KB_PG_PASSWORD"],
@@ -74,6 +126,9 @@ def test_azurite_creates_and_deletes_unique_container(
     """Azurite creates and deletes only a unique container for this test run."""
     from azure.core.credentials import AzureNamedKeyCredential
     from azure.storage.blob import BlobServiceClient
+
+    blob_port = int(example_environment["KB_BLOB_PORT"])
+    assert urlparse(example_environment["KB_BLOB_ACCOUNT_URL"]).port == blob_port
 
     blob_service = BlobServiceClient(
         account_url=example_environment["KB_BLOB_ACCOUNT_URL"],
