@@ -9,17 +9,44 @@ root_packages =
     reporting
     flows
     config
+include_external_packages = True
 
-[importlinter:contract:top_level_packages_are_independent]
-name = Top-level packages are independent
-type = independence
-modules =
-    source
-    delta
+[importlinter:contract:layers_must_not_import_store]
+name = Layers must not import store
+type = forbidden
+source_modules =
     extraction
-    chunking
     embedding
+    source
+forbidden_modules =
     store
+
+[importlinter:contract:store_must_not_import_layers]
+name = Store must not import layers
+type = forbidden
+source_modules =
+    store
+forbidden_modules =
+    extraction
+    embedding
+    source
+
+[importlinter:contract:chunking_must_not_import_layers_or_io_libraries]
+name = Chunking must not import layers or I/O libraries
+type = forbidden
+source_modules =
+    chunking
+forbidden_modules =
+    store
+    extraction
+    embedding
     reporting
     flows
-    config
+    azure
+    psycopg
+    psycopg2
+    sqlalchemy
+    requests
+    httpx
+    openai
+    boto3
