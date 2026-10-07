@@ -5,10 +5,12 @@ import os
 from pathlib import Path
 import re
 import socket
+import tempfile
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import fcntl
 import pytest
 
 
@@ -49,6 +51,26 @@ def fake_service_environment() -> dict[str, str]:
     }
     assert expected_settings <= settings.keys()
     return settings
+
+
+@pytest.fixture(autouse=True)
+def isolate_fake_service_state(
+    fake_service_environment: dict[str, str],
+) -> None:
+    """Serialize tests that configure the shared fake-service next response."""
+    ports = "-".join(
+        (
+            fake_service_environment["KB_FAKE_DI_PORT"],
+            fake_service_environment["KB_FAKE_OPENAI_PORT"],
+        )
+    )
+    lock_path = Path(tempfile.gettempdir()) / f"corp-kb-fake-services-{ports}.lock"
+    with lock_path.open("w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def _post_json(
@@ -198,6 +220,20 @@ def test_fake_services_can_fail_the_next_request_as_configured(
     assert status == expected_status
     assert body["error"]["code"] == expected_code
 
+    if request_kind == "document":
+        follow_up_status, follow_up_body = _post_document(
+            base_url,
+            b"%PDF-1.7\nminimal fake document",
+        )
+        assert follow_up_body["modelId"] == "prebuilt-layout"
+    else:
+        follow_up_status, follow_up_body = _post_json(
+            f"{base_url}/v1/embeddings",
+            {"input": "A report chunk", "model": "kb-embedding"},
+        )
+        assert follow_up_body["data"][0]["object"] == "embedding"
+    assert follow_up_status == 200
+
 
 def test_fake_services_can_timeout_the_next_request(
     fake_service_environment: dict[str, str],
@@ -212,3 +248,10 @@ def test_fake_services_can_timeout_the_next_request(
             {"input": "A report chunk", "model": "kb-embedding"},
             timeout=0.05,
         )
+
+    follow_up_status, follow_up_body = _post_json(
+        f"{openai_url}/v1/embeddings",
+        {"input": "A report chunk", "model": "kb-embedding"},
+    )
+    assert follow_up_status == 200
+    assert follow_up_body["data"][0]["object"] == "embedding"
