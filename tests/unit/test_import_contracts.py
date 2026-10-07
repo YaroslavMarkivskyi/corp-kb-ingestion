@@ -19,6 +19,17 @@ ROOT_PACKAGES = (
     "config",
 )
 
+EXTERNAL_PACKAGES = (
+    "azure",
+    "psycopg",
+    "psycopg2",
+    "sqlalchemy",
+    "requests",
+    "httpx",
+    "openai",
+    "boto3",
+)
+
 
 def _sample_project(
     tmp_path: Path, importing_package: str, imported_packages: tuple[str, ...]
@@ -29,6 +40,11 @@ def _sample_project(
     shutil.copyfile(Path(__file__).parents[2] / ".importlinter", project / ".importlinter")
 
     for package in ROOT_PACKAGES:
+        package_directory = project / package
+        package_directory.mkdir()
+        (package_directory / "__init__.py").touch()
+
+    for package in EXTERNAL_PACKAGES:
         package_directory = project / package
         package_directory.mkdir()
         (package_directory / "__init__.py").touch()
@@ -66,35 +82,93 @@ def test_flows_may_import_every_architecture_layer(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("importing_package", "imported_package"),
+    ("importing_package", "imported_package", "contract_name"),
     (
-        ("extraction", "store"),
-        ("embedding", "store"),
-        ("source", "store"),
-        ("store", "extraction"),
-        ("store", "embedding"),
-        ("store", "source"),
-        ("chunking", "store"),
-        ("chunking", "extraction"),
-        ("chunking", "embedding"),
-        ("chunking", "reporting"),
-        ("chunking", "flows"),
-        ("chunking", "azure"),
-        ("chunking", "psycopg"),
-        ("chunking", "psycopg2"),
-        ("chunking", "sqlalchemy"),
-        ("chunking", "requests"),
-        ("chunking", "httpx"),
-        ("chunking", "openai"),
-        ("chunking", "boto3"),
+        ("extraction", "store", "Layers must not import store"),
+        ("embedding", "store", "Layers must not import store"),
+        ("source", "store", "Layers must not import store"),
+        ("store", "extraction", "Store must not import layers"),
+        ("store", "embedding", "Store must not import layers"),
+        ("store", "source", "Store must not import layers"),
+        (
+            "chunking",
+            "store",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "extraction",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "embedding",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "reporting",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "flows",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "azure",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "psycopg",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "psycopg2",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "sqlalchemy",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "requests",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "httpx",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "openai",
+            "Chunking must not import layers or I/O libraries",
+        ),
+        (
+            "chunking",
+            "boto3",
+            "Chunking must not import layers or I/O libraries",
+        ),
     ),
 )
 def test_architecture_forbidden_imports_are_rejected(
-    tmp_path: Path, importing_package: str, imported_package: str
+    tmp_path: Path,
+    importing_package: str,
+    imported_package: str,
+    contract_name: str,
 ) -> None:
-    """The import contracts reject each dependency forbidden by the Architecture."""
+    """The intended forbidden contract rejects each architectural violation."""
     project = _sample_project(tmp_path, importing_package, (imported_package,))
 
     result = _lint_imports(project)
 
-    assert result.returncode != 0, result.stdout + result.stderr
+    output = result.stdout + result.stderr
+    assert result.returncode == 1, output
+    assert f"{contract_name} BROKEN" in output
+    assert f"{importing_package} is not allowed to import {imported_package}" in output
