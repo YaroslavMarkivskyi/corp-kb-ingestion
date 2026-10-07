@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -35,6 +36,123 @@ def _read_example_environment() -> dict[str, str]:
         )
         for name, value in settings.items()
     }
+
+
+def _available_host_port() -> int:
+    """Choose an unused loopback port number for an isolated Compose project."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
+
+
+def _published_port(compose_config: dict[str, object], service_name: str) -> str:
+    """Return the published host port for the service's sole TCP port."""
+    services = compose_config["services"]
+    assert isinstance(services, dict)
+    service = services[service_name]
+    assert isinstance(service, dict)
+    ports = service["ports"]
+    assert isinstance(ports, list) and len(ports) == 1
+    port = ports[0]
+    assert isinstance(port, dict)
+    return str(port["published"])
+
+
+def test_compose_runs_an_isolated_stack_on_changed_noncolliding_host_ports() -> None:
+    """Compose binds both services to distinct host ports supplied at runtime."""
+    postgres_port = _available_host_port()
+    azurite_port = _available_host_port()
+    while azurite_port == postgres_port:
+        azurite_port = _available_host_port()
+
+    environment = {
+        **os.environ,
+        **_read_example_environment(),
+        "KB_PG_PORT": str(postgres_port),
+        "KB_BLOB_PORT": str(azurite_port),
+        "KB_BLOB_ACCOUNT_URL": (
+            f"http://127.0.0.1:{azurite_port}/devstoreaccount1"
+        ),
+    }
+    rendered_config = subprocess.run(
+        ("docker", "compose", "config", "--format", "json"),
+        capture_output=True,
+        check=True,
+        cwd=PROJECT_ROOT,
+        env=environment,
+        text=True,
+    )
+    compose_config = json.loads(rendered_config.stdout)
+
+    assert _published_port(compose_config, "postgres") == str(postgres_port)
+    assert _published_port(compose_config, "azurite") == str(azurite_port)
+    assert postgres_port != azurite_port
+
+    project_name = f"port-test-{uuid4().hex}"
+    started = False
+    try:
+        subprocess.run(
+            (
+                "docker",
+                "compose",
+                "--project-name",
+                project_name,
+                "up",
+                "--detach",
+                "--wait",
+            ),
+            check=True,
+            cwd=PROJECT_ROOT,
+            env=environment,
+            text=True,
+            timeout=60,
+        )
+        started = True
+
+        import psycopg
+        from azure.core.credentials import AzureNamedKeyCredential
+        from azure.storage.blob import BlobServiceClient
+
+        with psycopg.connect(
+            host=environment["KB_PG_HOST"],
+            port=postgres_port,
+            dbname=environment["KB_PG_DB"],
+            user=environment["KB_PG_USER"],
+            password=environment["KB_PG_PASSWORD"],
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                assert cursor.fetchone() == (1,)
+
+        blob_service = BlobServiceClient(
+            account_url=environment["KB_BLOB_ACCOUNT_URL"],
+            credential=AzureNamedKeyCredential(
+                "devstoreaccount1",
+                "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+            ),
+        )
+        container = blob_service.get_container_client(f"port-test-{uuid4().hex}")
+        container.create_container()
+        try:
+            assert container.exists()
+        finally:
+            container.delete_container()
+    finally:
+        if started:
+            subprocess.run(
+                (
+                    "docker",
+                    "compose",
+                    "--project-name",
+                    project_name,
+                    "down",
+                    "--volumes",
+                ),
+                check=False,
+                cwd=PROJECT_ROOT,
+                env=environment,
+                text=True,
+            )
 
 
 @pytest.fixture(scope="module")
