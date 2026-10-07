@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
-from typing import Iterator
+from uuid import uuid4
 
 import pytest
 
@@ -45,27 +45,6 @@ def example_environment() -> dict[str, str]:
     return settings
 
 
-@pytest.fixture(scope="module", autouse=True)
-def local_stack(example_environment: dict[str, str]) -> Iterator[None]:
-    """Start the Compose stack once and always stop it when the module is done."""
-    compose_environment = {**os.environ, **example_environment}
-    subprocess.run(
-        ("docker", "compose", "up", "-d", "--wait", "--pull", "never"),
-        check=True,
-        cwd=PROJECT_ROOT,
-        env=compose_environment,
-    )
-    try:
-        yield
-    finally:
-        subprocess.run(
-            ("docker", "compose", "down", "--volumes"),
-            check=True,
-            cwd=PROJECT_ROOT,
-            env=compose_environment,
-        )
-
-
 def test_postgresql_answers_with_example_settings_and_pgvector(
     example_environment: dict[str, str],
 ) -> None:
@@ -89,10 +68,10 @@ def test_postgresql_answers_with_example_settings_and_pgvector(
             assert cursor.fetchone() == (1,)
 
 
-def test_azurite_creates_and_deletes_example_container(
+def test_azurite_creates_and_deletes_unique_container(
     example_environment: dict[str, str],
 ) -> None:
-    """Azurite accepts Blob Storage operations against the example container."""
+    """Azurite creates and deletes only a unique container for this test run."""
     from azure.core.credentials import AzureNamedKeyCredential
     from azure.storage.blob import BlobServiceClient
 
@@ -103,23 +82,24 @@ def test_azurite_creates_and_deletes_example_container(
             "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
         ),
     )
-    container = blob_service.get_container_client(example_environment["KB_BLOB_CONTAINER"])
+    container_name = f"{example_environment['KB_BLOB_CONTAINER']}-{uuid4().hex}"
+    container = blob_service.get_container_client(container_name)
 
+    created = False
     try:
-        if container.exists():
-            container.delete_container()
-
         container.create_container()
+        created = True
         assert container.exists()
     finally:
-        if container.exists():
+        if created:
             container.delete_container()
+    assert not container.exists()
 
 
 def test_all_local_services_report_healthy(
     example_environment: dict[str, str],
 ) -> None:
-    """Compose reports the two local services as healthy after waiting for startup."""
+    """The already-running Compose services report healthy."""
     result = subprocess.run(
         ("docker", "compose", "ps", "--format", "json"),
         capture_output=True,
