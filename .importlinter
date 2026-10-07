@@ -1,0 +1,25 @@
+[importlinter]
+root_packages =
+    source
+    delta
+    extraction
+    chunking
+    embedding
+    store
+    reporting
+    flows
+    config
+
+[importlinter:contract:top_level_packages_are_independent]
+name = Top-level packages are independent
+type = independence
+modules =
+    source
+    delta
+    extraction
+    chunking
+    embedding
+    store
+    reporting
+    flows
+    config
