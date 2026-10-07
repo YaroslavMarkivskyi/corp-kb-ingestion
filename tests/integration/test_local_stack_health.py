@@ -10,6 +10,8 @@ from uuid import uuid4
 
 import pytest
 
+from tests.helpers.compose import parse_compose_ps_output
+
 
 PROJECT_ROOT = Path(__file__).parents[2]
 EXAMPLE_ENVIRONMENT_FILE = PROJECT_ROOT / ".env.example"
@@ -163,9 +165,6 @@ def test_all_local_services_report_healthy(
         env={**os.environ, **example_environment},
         text=True,
     )
-    services = json.loads(result.stdout)
-    if isinstance(services, dict):
-        services = [services]
-
+    services = parse_compose_ps_output(result.stdout)
     health_by_service = {service["Service"]: service["Health"] for service in services}
     assert health_by_service == {"postgres": "healthy", "azurite": "healthy"}
