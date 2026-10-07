@@ -100,7 +100,7 @@ def test_azurite_creates_and_deletes_example_container(
         account_url=example_environment["KB_BLOB_ACCOUNT_URL"],
         credential=AzureNamedKeyCredential(
             "devstoreaccount1",
-            "Eby8vdM02xNOcqFeqCnf2o==",
+            "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
         ),
     )
     container = blob_service.get_container_client(example_environment["KB_BLOB_CONTAINER"])
