@@ -1,1 +1,4 @@
 import-linter==2.15.0
+pytest==8.3.5
+psycopg[binary]==3.2.6
+azure-storage-blob==12.24.1

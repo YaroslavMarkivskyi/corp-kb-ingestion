@@ -2,12 +2,26 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${KB_PG_DB:-corp_kb}
+      POSTGRES_USER: ${KB_PG_USER:-corp_kb}
+      POSTGRES_PASSWORD: ${KB_PG_PASSWORD:-postgres}
     ports:
       - 5432:5432
+    volumes:
+      - ./init-vector.sql:/docker-entrypoint-initdb.d/init-vector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:3.35.0
     command: azurite-blob --blobHost 0.0.0.0
     ports:
       - 10000:10000
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('net').connect(10000, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 5
