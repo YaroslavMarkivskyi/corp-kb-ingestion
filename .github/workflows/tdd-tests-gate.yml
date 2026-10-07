@@ -137,7 +137,17 @@ jobs:
             Review the tests for:
             1. Do they express the scenario in scenario.txt, with meaningful assertions
                (not trivially true, not testing mocks)?
-            2. Are they deterministic and isolated (no network, no sleeps, no order dependence)?
+            2. Are they deterministic and isolated? Unit tests (under tests/unit) use no
+               network, no sleeps and no order dependence. Integration tests (under
+               tests/integration, or any test that needs a service) MAY depend on the
+               local test services of the repository (the Docker Compose stack:
+               PostgreSQL, Azurite, fake service servers) and on local command-line
+               tools (docker, az bicep), assuming that the stack is already running;
+               they must not reach external networks or shared services, must not rely
+               on state left by other tests, and must create and delete only the data
+               they create themselves (for example a uniquely named blob container). Do
+               NOT report FAIL only because a test needs these local services or tools,
+               or only because it checks the configured services of the stack.
             3. Would they fail for the right reason while the feature is missing (missing
                behaviour), rather than because of a bug in the test itself? An import error
                for a module that does not exist yet is acceptable in an empty repository,
