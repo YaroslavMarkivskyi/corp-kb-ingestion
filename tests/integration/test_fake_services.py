@@ -101,6 +101,12 @@ def _set_next_response(base_url: str, response: str) -> None:
     assert (status, body) == (200, {"next_response": response})
 
 
+def _recorded_request_count(base_url: str) -> int:
+    """Return the number of requests recorded before this test's actions."""
+    with urlopen(f"{base_url}/__fake__/requests") as response:
+        return len(json.loads(response.read())["requests"])
+
+
 def test_fake_services_return_named_layout_embedding_and_request_targets(
     fake_service_environment: dict[str, str],
 ) -> None:
@@ -110,7 +116,12 @@ def test_fake_services_return_named_layout_embedding_and_request_targets(
     )
     openai_url = f"http://127.0.0.1:{fake_service_environment['KB_FAKE_OPENAI_PORT']}"
 
+    request_counts = {
+        document_intelligence_url: _recorded_request_count(document_intelligence_url),
+        openai_url: _recorded_request_count(openai_url),
+    }
     _set_next_response(document_intelligence_url, "layout-contract")
+    _set_next_response(openai_url, "embedding-contract")
     layout_status, layout = _post_document(
         document_intelligence_url,
         b"%PDF-1.7\nminimal fake document",
@@ -146,7 +157,10 @@ def test_fake_services_return_named_layout_embedding_and_request_targets(
     ):
         with urlopen(f"{base_url}/__fake__/requests") as response:
             recorded_requests = json.loads(response.read())["requests"]
-        assert any(request["target"] == expected_target for request in recorded_requests)
+        assert any(
+            request["target"] == expected_target
+            for request in recorded_requests[request_counts[base_url] :]
+        )
 
 
 @pytest.mark.parametrize(
