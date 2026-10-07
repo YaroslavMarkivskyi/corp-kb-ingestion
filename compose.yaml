@@ -2,9 +2,9 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: ${KB_PG_DB}
-      POSTGRES_USER: ${KB_PG_USER}
-      POSTGRES_PASSWORD: ${KB_PG_PASSWORD}
+      POSTGRES_DB: ${KB_PG_DB:-corp_kb}
+      POSTGRES_USER: ${KB_PG_USER:-corp_kb}
+      POSTGRES_PASSWORD: ${KB_PG_PASSWORD:-postgres}
     ports:
       - 5432:5432
     volumes:
